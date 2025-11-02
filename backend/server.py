@@ -101,7 +101,7 @@ async def generate_image(request: GenerateRequest):
         
         return GenerateResponse(
             ok=True,
-            imagePath=f"/images/{filename}",
+            imagePath=f"/api/images/{filename}",
             filename=filename
         )
     except HTTPException:
