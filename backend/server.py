@@ -104,6 +104,8 @@ async def generate_image(request: GenerateRequest):
             imagePath=f"/images/{filename}",
             filename=filename
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating image: {e}")
         raise HTTPException(status_code=500, detail=str(e))
