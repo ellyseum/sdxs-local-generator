@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 import torch
-from diffusers import StableDiffusionPipeline, UNet2DConditionModel
+from diffusers import StableDiffusionPipeline, DiffusionPipeline
 from diffusers.schedulers import LCMScheduler
 
 logger = logging.getLogger(__name__)
@@ -19,33 +19,42 @@ class ModelLoader:
         try:
             logger.info(f"Loading model from {model_path}...")
             
-            # Load the UNet model
-            unet = UNet2DConditionModel.from_pretrained(
-                str(model_path),
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-            )
+            # Try to load as a complete pipeline first
+            try:
+                self.pipeline = DiffusionPipeline.from_pretrained(
+                    str(model_path),
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    safety_checker=None,
+                    use_safetensors=True
+                )
+                logger.info("Loaded as complete pipeline")
+            except Exception as e:
+                logger.warning(f"Could not load as pipeline: {e}")
+                # Fall back to loading from HuggingFace directly
+                logger.info("Loading from HuggingFace directly...")
+                self.pipeline = DiffusionPipeline.from_pretrained(
+                    repo_id,
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    safety_checker=None,
+                    use_safetensors=True
+                )
             
-            # Use base Stable Diffusion for other components
-            base_model = "stabilityai/stable-diffusion-2-1-base"
-            
-            self.pipeline = StableDiffusionPipeline.from_pretrained(
-                base_model,
-                unet=unet,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                safety_checker=None,
-                requires_safety_checker=False
-            )
-            
-            # Use LCM scheduler for fast inference
-            self.pipeline.scheduler = LCMScheduler.from_config(
-                self.pipeline.scheduler.config
-            )
+            # Configure scheduler for fast inference
+            try:
+                self.pipeline.scheduler = LCMScheduler.from_config(
+                    self.pipeline.scheduler.config
+                )
+            except:
+                logger.warning("Could not set LCM scheduler, using default")
             
             self.pipeline = self.pipeline.to(self.device)
             
             # Enable optimizations
             if self.device == "cuda":
-                self.pipeline.enable_attention_slicing()
+                try:
+                    self.pipeline.enable_attention_slicing()
+                except:
+                    pass
             
             self.repo_id = repo_id
             logger.info(f"Model {repo_id} loaded successfully")
