@@ -1,72 +1,121 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel
+from typing import Optional
 import uuid
-from datetime import datetime, timezone
 
+from services.hf_downloader import HFDownloader
+from services.model_loader import ModelLoader
+from services.pipeline import SDXSPipeline
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Create directories
+MODELS_DIR = ROOT_DIR / 'models'
+IMAGES_DIR = ROOT_DIR / 'data' / 'images'
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-# Create the main app without a prefix
+# Create the main app
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# Initialize services
+hf_downloader = HFDownloader(MODELS_DIR)
+model_loader = ModelLoader()
+sdxs_pipeline = SDXSPipeline(model_loader, IMAGES_DIR)
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+# Models
+class ModelPrepareRequest(BaseModel):
+    modelCardUrl: str
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class ModelPrepareResponse(BaseModel):
+    ok: bool
+    repoId: str
+    message: str
 
-# Add your routes to the router instead of directly to app
+class GenerateRequest(BaseModel):
+    prompt: str
+    size: Optional[str] = '512x512'
+    steps: Optional[int] = 8
+    guidance: Optional[float] = 4.0
+    seed: Optional[int] = None
+
+class GenerateResponse(BaseModel):
+    ok: bool
+    imagePath: str
+    filename: str
+
+# Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "SD-XS Local Image Generation API"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+@api_router.post("/model/prepare", response_model=ModelPrepareResponse)
+async def prepare_model(request: ModelPrepareRequest):
+    try:
+        logger.info(f"Preparing model from {request.modelCardUrl}")
+        
+        # Download model
+        repo_id = hf_downloader.parse_repo_id(request.modelCardUrl)
+        model_path = await hf_downloader.download_model(repo_id)
+        
+        # Load model into memory
+        await model_loader.load_model(repo_id, model_path)
+        
+        return ModelPrepareResponse(
+            ok=True,
+            repoId=repo_id,
+            message=f"Model {repo_id} loaded successfully"
+        )
+    except Exception as e:
+        logger.error(f"Error preparing model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.post("/generate", response_model=GenerateResponse)
+async def generate_image(request: GenerateRequest):
+    try:
+        logger.info(f"Generating image for prompt: {request.prompt}")
+        
+        # Check if model is loaded
+        if not model_loader.is_loaded():
+            raise HTTPException(status_code=400, detail="No model loaded. Please prepare a model first.")
+        
+        # Generate image
+        image_path = await sdxs_pipeline.generate(
+            prompt=request.prompt,
+            size=request.size,
+            steps=request.steps,
+            guidance=request.guidance,
+            seed=request.seed
+        )
+        
+        filename = Path(image_path).name
+        
+        return GenerateResponse(
+            ok=True,
+            imagePath=f"/images/{filename}",
+            filename=filename
+        )
+    except Exception as e:
+        logger.error(f"Error generating image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Include the router in the main app
+@api_router.get("/images/{filename}")
+async def get_image(filename: str):
+    image_path = IMAGES_DIR / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(image_path)
+
+# Include router
 app.include_router(api_router)
 
 app.add_middleware(
@@ -83,7 +132,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
