@@ -160,7 +160,7 @@ When you click "Generate":
 
 1. Takes your text prompt
 2. Runs the SD-XS diffusion pipeline (default: 8 steps, 512x512)
-3. Saves the generated PNG to `./data/images/`
+3. Saves the generated PNG to `./backend/data/images/`
 4. Displays the image in the UI
 
 ## Supported Models
@@ -176,8 +176,43 @@ The app works with SD-XS (Stable Diffusion XS) models that are compatible with t
 ### `POST /api/model/prepare`
 Loads a model from HuggingFace.
 
+**Request:**
+```json
+{
+  "modelCardUrl": "https://huggingface.co/IDKiro/sdxs-512-0.9"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "repoId": "IDKiro/sdxs-512-0.9",
+  "message": "Model IDKiro/sdxs-512-0.9 loaded successfully"
+}
+```
+
 ### `POST /api/generate`
 Generates an image from a text prompt.
+
+**Request:**
+```json
+{
+  "prompt": "A beautiful sunset over mountains",
+  "size": "512x512",
+  "steps": 8,
+  "guidance": 4.0
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "imagePath": "/api/images/uuid.png",
+  "filename": "uuid.png"
+}
+```
 
 ### `GET /api/images/{filename}`
 Serves a generated image file.
@@ -198,8 +233,61 @@ Serves a generated image file.
 
 The app automatically detects and uses GPU if available.
 
+## Troubleshooting
+
+### Model Download Issues
+
+If model download fails:
+- Check your internet connection
+- Ensure you have enough disk space (~2GB per model)
+- Try accessing the HuggingFace URL in your browser first
+
+### Generation Timeout
+
+If image generation times out:
+- The frontend is set to wait 120 seconds
+- CPU generation takes 30-60 seconds for 8 steps
+- Consider reducing steps to 4 for faster generation (lower quality)
+
+### Memory Issues
+
+If you run out of memory:
+- Close other applications
+- Try using a smaller model
+- Reduce the number of inference steps
+- Consider using a machine with more RAM (8GB+ recommended)
+
+## Development
+
+### Running Tests
+
+Backend tests can be run with:
+```bash
+cd backend
+python -m pytest
+```
+
+### Code Quality
+
+```bash
+# Python linting
+cd backend
+black .
+flake8 .
+
+# JavaScript linting
+cd frontend
+npm run lint
+```
+
 ## Notes
 
 - All inference is local - no cloud API calls except initial HuggingFace download
-- Generated images are saved permanently in `./data/images/`
-- Models are cached in `./models/` directory
+- Generated images are saved permanently in `./backend/data/images/`
+- Models are cached in `./backend/models/` directory
+- First model load takes time (~2-5 minutes depending on connection)
+- Subsequent runs are much faster as the model is cached
+
+## License
+
+This project is for demonstration purposes.
