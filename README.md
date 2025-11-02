@@ -17,6 +17,132 @@ A minimal web application for generating images locally using Stable Diffusion X
 - **Inference**: PyTorch with diffusers library
 - **Storage**: Local file system
 
+## Installation & Setup
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+
+- **Git** - for cloning the repository
+- **Python 3.11+** - for running the backend
+- **Node.js 18+** and **npm** or **yarn** - for running the frontend
+- **MongoDB** - for the database (optional for this app, but required by the stack)
+
+### 1. Clone the Repository
+
+```bash
+git clone <your-repository-url>
+cd <repository-name>
+```
+
+### 2. Backend Setup
+
+#### Install Python Dependencies
+
+```bash
+cd backend
+
+# Create a virtual environment (recommended)
+python -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+#### Configure Environment Variables
+
+Create or update `backend/.env`:
+
+```bash
+MONGO_URL="mongodb://localhost:27017"
+DB_NAME="sdxs_database"
+CORS_ORIGINS="*"
+```
+
+#### Start the Backend Server
+
+```bash
+# From the backend directory
+uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+```
+
+The backend API will be available at `http://localhost:8001`
+
+### 3. Frontend Setup
+
+#### Install Node Dependencies
+
+```bash
+cd ../frontend
+
+# Using yarn (recommended)
+yarn install
+
+# Or using npm
+npm install
+```
+
+#### Configure Environment Variables
+
+Create or update `frontend/.env`:
+
+```bash
+REACT_APP_BACKEND_URL=http://localhost:8001
+WDS_SOCKET_PORT=3000
+```
+
+#### Start the Frontend Development Server
+
+```bash
+# Using yarn
+yarn start
+
+# Or using npm
+npm start
+```
+
+The frontend will be available at `http://localhost:3000`
+
+### 4. First Run
+
+1. Open your browser and navigate to `http://localhost:3000`
+2. Enter the model URL: `https://huggingface.co/IDKiro/sdxs-512-0.9`
+3. Click **"Fetch & Load Model"** (this will download ~2GB, takes a few minutes)
+4. Once loaded, enter a text prompt (e.g., "A beautiful sunset over mountains")
+5. Click **"Generate"** and wait 30-60 seconds
+6. Your generated image will appear below!
+
+## Project Structure
+
+```
+/app/
+├── backend/
+│   ├── server.py              # Main FastAPI application
+│   ├── services/
+│   │   ├── hf_downloader.py   # HuggingFace model downloader
+│   │   ├── model_loader.py    # Model loading and caching
+│   │   └── pipeline.py        # Image generation pipeline
+│   ├── models/                # Downloaded models (created at runtime)
+│   ├── data/
+│   │   └── images/            # Generated images (created at runtime)
+│   ├── requirements.txt       # Python dependencies
+│   └── .env                   # Backend environment variables
+├── frontend/
+│   ├── src/
+│   │   ├── App.js             # Main React component
+│   │   ├── App.css            # Styles
+│   │   └── components/ui/     # Shadcn UI components
+│   ├── package.json           # Node dependencies
+│   └── .env                   # Frontend environment variables
+└── README.md
+```
+
 ## How It Works
 
 ### 1. Model Loading
